@@ -1,0 +1,178 @@
+#!/usr/local/bin/python
+
+# Binary translator
+# Copyright 2014 smaptas
+# This is a command-line version of Paul Schou's TRANSLATOR, BINARY page at
+# http://paulschou.com/tools/xlate/
+
+import argparse
+import sys
+import fileinput
+from Crypto.Hash import MD2
+from Crypto.Hash import MD4
+from Crypto.Hash import MD5
+from Crypto.Hash import SHA
+from Crypto.Hash import SHA224
+from Crypto.Hash import SHA256
+from Crypto.Hash import SHA384
+from Crypto.Hash import SHA512
+from Crypto.Hash import RIPEMD
+import binascii
+
+formats = ['all', 'text', 'binary', 'oct', 'hex', 'base32', 'base64', 'ascii85',
+           'char', 'info']
+
+def text2binary(lines):
+    outLines = []
+    for S in lines:
+        outStr = ''
+        for c in S:
+            outStr += '{0:08b}'.format(ord(c)) + ' '
+        outLines.append(outStr[:-1])
+    return '\n'.join(outLines)
+
+def binary2text(lines):
+    outLines = []
+    for S in lines:
+        outStr = ''
+        for i in range(0, len(S), 8):
+            outStr += chr(int(S[i:i+8], 2))
+        outLines.append(outStr)
+    return '\n'.join(outLines)
+
+
+def text2base64(lines):
+    str64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    outLines = []
+    for S in lines:
+        binStr = ''
+        for c in S:
+            binStr += '{0:08b}'.format(ord(c))
+        endStr = ['', '==' , '='][len(binStr) % 6 / 2]
+        binStr += '0' * 2 * len(endStr)
+        outStr = ''
+        for i in range(0, len(binStr), 6):
+            outStr += str64[int(binStr[i:i+6], 2)]
+        outLines.append(outStr + endStr)
+    return '\n'.join(outLines)
+
+def base64_to_text(lines):
+    str64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    outLines = []
+    for S in lines:
+        binStr = ''
+        pad = ''
+        for i in range(len(S)):
+            c = S[i]
+            if c == '=':
+                pad = binStr[-2:] + pad
+                binStr = binStr[:-2]
+            else:
+                binStr += '{0:06b}'.format(str64.find(c))
+        #for c in S:
+            #if c == '=':
+                #print "PAD:", binStr[-2:]
+                #binStr = binStr[:-2]
+            #else:
+                #binStr += '{0:06b}'.format(str64.find(c))
+        if pad == '':
+            #print "PAD: 00"
+            pass
+        else:
+            print "PAD:", pad
+        outStr = ''
+        for i in range(0, len(binStr), 8):
+            outStr += chr(int(binStr[i:i+8], 2))
+        outLines.append(outStr)
+    return '\n'.join(outLines)
+
+def textinfo(lineList):
+    '''
+    Other hashes planned:
+    ripemd128
+    ripemd256
+    ripemd320
+    whirlpool
+    tiger128,3
+    tiger160,3
+    tiger192,3
+    tiger128,4
+    tiger160,4
+    tiger192,4
+    snefru
+    snefru256
+    gost
+    adler32
+    crc32
+    crc32b
+    salsa10
+    salsa20
+    haval128,3
+    haval160,3
+    haval192,3
+    haval224,3
+    haval256,3
+    haval128,4
+    haval160,4
+    haval192,4
+    haval224,4
+    haval256,4
+    haval128,5
+    haval160,5
+    haval192,5
+    haval224,5
+    haval256,5
+    '''
+    numLines = len(lineList)
+    numWords = 0
+    numBytes = 0
+    hashes = [('md2', MD2.new()),
+              ('md4', MD4.new()),
+              ('md5', MD5.new()),
+              ('sha1', SHA.new()),
+              ('sha224', SHA224.new()),
+              ('sha256', SHA256.new()),
+              ('sha384', SHA384.new()),
+              ('sha512', SHA512.new()),
+              ('ripemd160', RIPEMD.new())]
+    crc32 = binascii.crc32('')
+    for line in lineList:
+        numWords += len(line.strip().split())
+        numBytes += len(line)
+        for h in hashes:
+            h[1].update(line)
+        crc32 = binascii.crc32(line, crc32) & 0xffffffff
+    outStr = ''
+    outStr += 'lines: {}  words: {}  bytes: {}\n'.format(numLines, numWords,
+                                                         numBytes)
+    for h in hashes:
+        outStr += '{}: {}\n'.format(h[0], h[1].hexdigest())
+    outStr += 'crc32: {0:x}'.format(crc32)
+    return outStr
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('inFormat', choices=formats[1:-1],
+                        help='Input formats: ' + str(formats[1:-1]))
+    parser.add_argument('outFormat', choices=formats,
+                        help='Output format: ' + str(formats))
+    parser.add_argument('input', nargs='?', type=argparse.FileType('r'),
+                         default=sys.stdin)
+    args = parser.parse_args()
+    lines = map(lambda x: x.strip(), args.input.readlines())
+    if args.inFormat == 'text' and args.outFormat == 'info':
+        print textinfo(lines)
+    if args.inFormat == 'text' and args.outFormat == 'binary':
+        print text2binary(lines)
+    if args.inFormat == 'text' and args.outFormat == 'base64':
+        print text2base64(lines)
+    if args.inFormat == 'base64' and args.outFormat == 'text':
+        print base64_to_text(lines)
+    if args.inFormat == 'binary' and args.outFormat == 'text':
+        print binary2text(lines)
+    if args.outFormat == 'all':
+        for x in formats[1:]:
+            convert(args.input, args.inFormat, x)
+
+if __name__ == '__main__':
+    main()
